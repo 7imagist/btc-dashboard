@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>比特币底部监控看板</title>
+
+    <link rel="dns-prefetch" href="https://api.coingecko.com">
+    <link rel="dns-prefetch" href="https://api.blockchain.info">
+    <link rel="dns-prefetch" href="https://api.alternative.me">
+    <link rel="dns-prefetch" href="https://mempool.space">
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+
+    <!-- 全部样式离线内联，不依赖任何外部 CSS / Tailwind CDN -->
+    <style>
+        :root {
+            --primary: #3b82f6; --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+            --dark: #0f172a; --dark-2: #1e293b; --dark-3: #334155;
+            --text-1: #f1f5f9; --text-2: #94a3b8; --text-3: #64748b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--dark); color: var(--text-1); min-height: 100vh; line-height: 1.5; }
+        .container { max-width: 1280px; margin: 0 auto; padding: 32px 16px; }
+
+        .text-2 { color: var(--text-2); } .text-3 { color: var(--text-3); }
+        .text-primary { color: var(--primary); } .text-success { color: var(--success); }
+        .text-danger { color: var(--danger); } .text-warning { color: var(--warning); } .text-white { color: #fff; }
+
+        h1.title { font-size: clamp(2rem,4vw,3rem); font-weight: 700; background: linear-gradient(to right,var(--primary),#8b5cf6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { color: var(--text-2); margin-top: 8px; font-size: 1.125rem; }
+        .header { margin-bottom: 32px; }
+        .mb-8 { margin-bottom: 32px; } .mt-8 { margin-top: 32px; }
+        .flex { display: flex; } .flex-col { flex-direction: column; }
+        .items-center { align-items: center; } .items-end { align-items: flex-end; } .items-start { align-items: flex-start; }
+        .justify-between { justify-content: space-between; } .justify-center { justify-content: center; }
+        .flex-wrap { flex-wrap: wrap; } .gap-4 { gap: 16px; } .gap-8 { gap: 32px; }
+
+        .gradient-border { background: linear-gradient(135deg,#3b82f6,#8b5cf6); padding: 1px; border-radius: 16px; margin-bottom: 32px; }
+        .gradient-border > .inner { background: var(--dark-2); border-radius: 15px; padding: 32px; }
+        .card { background: var(--dark-2); border-radius: 16px; padding: 24px; box-shadow: 0 0 20px rgba(59,130,246,.05); }
+        .stat-box { background: rgba(51,65,85,.5); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; }
+
+        .price-head { display: flex; flex-direction: column; gap: 24px; }
+        .btc-icon { width: 40px; height: 40px; background: #f97316; border-radius: 9999px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-weight: 700; color: #fff; }
+        .badge { margin-left: 16px; font-size: .875rem; color: var(--text-3); background: var(--dark-3); padding: 4px 12px; border-radius: 9999px; }
+        #btc-price { font-size: clamp(3rem,8vw,5rem); font-weight: 700; letter-spacing: -.02em; }
+        #price-change { margin-left: 24px; font-size: 1.875rem; font-weight: 600; }
+        .aux-info { display: flex; flex-wrap: wrap; gap: 32px; margin-top: 24px; font-size: 1.125rem; }
+
+        .key-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+        .key-grid .stat-box { text-align: center; }
+        .stat-label { color: var(--text-3); font-size: .875rem; margin-bottom: 8px; }
+        .stat-value { font-size: 1.5rem; font-weight: 600; }
+        .stat-sub { font-size: .875rem; margin-top: 4px; }
+        /* 阈值参考区 */
+        .stat-ref { margin-top: auto; padding-top: 8px; border-top: 1px solid rgba(148,163,184,.15); font-size: .72rem; line-height: 1.5; color: var(--text-3); }
+        .stat-ref:first-child { margin-top: 0; }
+        .stat-ref .reached { color: var(--success); font-weight: 600; }
+        .stat-ref .not-reached { color: var(--text-3); }
+        .chart-wrap { margin-top: 32px; height: 160px; }
+
+        .main-grid { display: grid; grid-template-columns: 1fr; gap: 32px; margin-bottom: 32px; }
+        .section-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; }
+        .section-title svg { width: 24px; height: 24px; margin-right: 8px; color: var(--primary); }
+
+        .gauge { display: flex; flex-direction: column; align-items: center; }
+        .gauge-ring { position: relative; width: 192px; height: 192px; margin-bottom: 24px; }
+        .gauge-ring svg { width: 100%; height: 100%; }
+        .gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #btci-score { font-size: 3rem; font-weight: 700; }
+        .gauge-w { width: 100%; }
+        .stage-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .progress-track { width: 100%; background: var(--dark-3); border-radius: 9999px; height: 12px; }
+        #stage-bar { background: var(--warning); height: 12px; border-radius: 9999px; width: 52%; transition: width .4s ease; }
+        .scale-row { display: flex; justify-content: space-between; font-size: .75rem; color: var(--text-3); margin-top: 8px; }
+
+        .indicator-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+
+        .alert { border-radius: 16px; padding: 24px; margin-bottom: 32px; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3); }
+        .alert .row { display: flex; align-items: flex-start; }
+        .alert svg { width: 32px; height: 32px; margin-right: 16px; flex-shrink: 0; margin-top: 4px; }
+        .alert h3 { font-size: 1.25rem; font-weight: 600; margin-bottom: 8px; }
+        .alert p { color: var(--text-2); font-size: 1.125rem; }
+
+        .source-grid { display: grid; grid-template-columns: 1fr; gap: 12px; color: var(--text-2); }
+        .source-grid .item { display: flex; align-items: center; }
+        .dot { width: 8px; height: 8px; background: var(--primary); border-radius: 9999px; margin-right: 12px; flex-shrink: 0; }
+        footer { text-align: center; color: var(--text-3); font-size: .875rem; padding: 16px 0; }
+
+        .price-pulse { animation: pulse .5s ease-in-out; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.03); } 100% { transform: scale(1); } }
+
+        @media (min-width: 768px) {
+            .key-grid { grid-template-columns: repeat(3,1fr); }
+            .indicator-grid { grid-template-columns: repeat(3,1fr); }
+            .source-grid { grid-template-columns: repeat(2,1fr); }
+        }
+        @media (min-width: 1024px) {
+            .price-head { flex-direction: row; align-items: center; justify-content: space-between; }
+            .main-grid { grid-template-columns: repeat(3,1fr); }
+            .col-span-2 { grid-column: span 2; }
+        }
+        @media (max-width: 767px) { .key-grid .col-span-2-sm { grid-column: span 2; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="title">比特币底部监控看板</h1>
+            <p class="subtitle">实时监控矿工生态与市场底部信号</p>
+        </header>
+
+        <div class="gradient-border">
+            <div class="inner">
+                <div class="price-head">
+                    <div>
+                        <div class="flex items-center" style="margin-bottom:16px;">
+                            <div class="btc-icon">₿</div>
+                            <span class="text-2" style="font-size:1.25rem;">比特币 (BTC/USD)</span>
+                            <span id="last-update" class="badge">更新中...</span>
+                        </div>
+                        <div class="flex items-end">
+                            <span id="btc-price">--</span>
+                            <span id="price-change"><span class="text-3">--</span></span>
+                        </div>
+                        <div class="aux-info">
+                            <div><span class="text-3">人民币: </span><span id="cny-price" class="text-3" style="font-weight:500;">--</span></div>
+                            <div><span class="text-3">24h最高: </span><span id="high-24h" class="text-3" style="font-weight:500;">--</span></div>
+                            <div><span class="text-3">24h最低: </span><span id="low-24h" class="text-3" style="font-weight:500;">--</span></div>
+                        </div>
+                    </div>
+                    <div class="key-grid">
+                        <div class="stat-box"><div class="stat-label">距历史高点</div><div id="ath-drop" class="stat-value text-3">--</div><div class="stat-ref">历史高点(ATH)：<span id="ath-ref-value">加载中</span><br>底部参考：回撤 -75%~-85%<br>状态：<span id="ath-reach" class="not-reached">待加载</span></div></div>
+                    </div>
+                </div>
+                <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="card">
+                <h2 class="section-title">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    底部综合指数 (BTCI)
+                </h2>
+                <div class="gauge">
+                    <div class="gauge-ring">
+                        <svg viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="45" fill="none" stroke="#334155" stroke-width="10"/>
+                            <circle id="progress-circle" cx="50" cy="50" r="45" fill="none" stroke="#334155" stroke-width="10" stroke-dasharray="282.74" stroke-dashoffset="282.74" stroke-linecap="round" transform="rotate(-90 50 50)"/>
+                        </svg>
+                        <div class="gauge-center"><span id="btci-score" class="text-3">--</span><span class="text-3" style="font-size:1.125rem;">分</span></div>
+                    </div>
+                    <div class="gauge-w">
+                        <div class="stage-row"><span class="text-3">当前阶段</span><span id="current-stage" class="text-3" style="font-weight:500;">待加载</span></div>
+                        <div class="progress-track"><div id="stage-bar" style="width:0%;background:#334155;"></div></div>
+                        <div class="scale-row"><span>0</span><span>死亡螺旋</span><span>黄金坑</span><span>筑底完成</span><span>100</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card col-span-2">
+                <h2 class="section-title">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    核心底部指标
+                </h2>
+                <div class="indicator-grid">
+                    <div class="stat-box">
+                        <div class="stat-label">全网算力</div>
+                        <div id="hashrate-drop" class="stat-value text-3">--</div>
+                        <div id="hashrate-status" class="stat-sub text-3">待加载</div>
+                        <div class="stat-ref">峰值参考：1100 EH/s｜底部参考：较峰值跌幅 ≤ -15%<br>状态：<span id="hashrate-reach" class="not-reached">待加载</span></div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">挖矿难度</div>
+                        <div id="difficulty-change" class="stat-value text-3">--</div>
+                        <div id="difficulty-status" class="stat-sub text-3">待加载</div>
+                        <div class="stat-ref">峰值参考：88.5 T｜底部参考：累计调整 ≤ -8%<br>状态：<span id="difficulty-reach" class="not-reached">待加载</span></div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">恐慌与贪婪指数</div>
+                        <div id="fear-greed" class="stat-value text-3">--</div>
+                        <div class="stat-sub text-3">待加载</div>
+                        <div class="stat-ref">底部参考：数值 ≤ 25（极度恐慌）<br>状态：<span id="feargreed-reach" class="not-reached">待加载</span></div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Mayer倍数</div>
+                        <div id="mayer-multiple" class="stat-value text-3">--</div>
+                        <div class="stat-sub text-3">待加载</div>
+                        <div class="stat-ref">底部参考：倍数 &lt; 0.8（低估）<br>状态：<span id="mayer-reach" class="not-reached">待加载</span></div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">200日均线</div>
+                        <div id="ma200" class="stat-value text-3">--</div>
+                        <div id="ma200-status" class="stat-sub text-3">待加载</div>
+                        <div class="stat-ref">底部参考：现价偏离 ≤ -10%<br>状态：<span id="ma200-reach" class="not-reached">待加载</span></div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">200周均线偏离</div>
+                        <div id="ma200w-deviation" class="stat-value text-3">--</div>
+                        <div id="ma200w-status" class="stat-sub text-3">待加载</div>
+                        <div class="stat-ref">底部参考：现价跌破200周线(偏离&lt;0)<br>状态：<span id="ma200w-reach" class="not-reached">待加载</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="alert-box" class="alert" style="background:rgba(51,65,85,.5);border:1px solid #334155;">
+            <div class="row">
+                <svg class="text-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 13a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+                <div>
+                    <h3 class="text-2">数据加载中…</h3>
+                    <p>正在从公开 API 获取实时数据，请稍候。数据返回后将显示底部信号判断与预警结论。</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:32px;">
+            <h3 style="font-size:1.125rem;font-weight:600;margin-bottom:16px;">数据来源与更新频率</h3>
+            <div class="source-grid">
+                <div class="item"><span class="dot"></span>价格数据：CoinGecko API（每3秒更新）</div>
+                <div class="item"><span class="dot"></span>算力/难度：Blockchain.com API（每10分钟更新）</div>
+                <div class="item"><span class="dot"></span>恐慌与贪婪指数：Alternative.me API（每日更新）</div>
+                <div class="item"><span class="dot"></span>均线/Mayer：CoinGecko 历史价格（每小时更新）</div>
+                <div class="item"><span class="dot"></span>200周均线：CoinGecko 周线数据（每小时更新）</div>
+            </div>
+        </div>
+
+        <footer><p>数据仅供参考，不构成任何投资建议。投资有风险，入市需谨慎。</p></footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script>
+        const CONFIG = { PRICE_UPDATE_INTERVAL: 3000, STATS_UPDATE_INTERVAL: 600000, FULL_UPDATE_INTERVAL: 3600000, REQUEST_TIMEOUT: 6000, CACHE_DURATION: 3600000, ATH: 73750.07 /* 仅 API 取不到 ath 时的兜底值，正常以 API 实时返回的历史高点为准 */, PEAK_HASHRATE: 1100, PEAK_DIFFICULTY: 88.5 };
+        // 修正版底部判定阈值（更贴合历史熊底规律）
+        const THRESHOLDS = {
+            ATH_DROP: -75,        // 距历史高点回撤 ≤ -75% 视为底部
+            HASHRATE_DROP: -15,   // 算力较峰值跌幅 ≤ -15%
+            DIFFICULTY_DROP: -8,  // 累计难度调整 ≤ -8%
+            FEAR_GREED: 25,       // 恐慌贪婪 ≤ 25（极度恐慌）
+            MAYER: 0.8,           // Mayer倍数 < 0.8（低估）
+            MA200_DEV: -10,       // 现价较200日线偏离 ≤ -10%
+            MA200W_DEV: 0         // 现价跌破200周线（偏离 < 0）
+        };
+        // 统一更新「达标/未达标」标记
+        function setReach(id, reached) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = reached ? '已达标' : '未达标';
+            el.className = reached ? 'reached' : 'not-reached';
+        }
+        let priceChart;
+        let cache = {};
+        let metrics = { fearGreed: 50, mayerMultiple: 1, hashrateDrop: 0, difficultyChange: 0, ma200wDeviation: 0, athDrop: 0 };
+        // 记录各数据源是否真正获取成功，避免用默认值算出"假"的 BTCI/预警
+        let ready = { price: false, feargreed: false, indicators: false, blockchain: false };
+
+        window.addEventListener('load', () => {
+            loadAllFromCache();
+            renderFromCache();   // 有缓存则即时渲染，避免长时间空白
+            initPriceChart();
+            Promise.allSettled([fetchPriceData(), fetchBlockchainStats(), fetchFearGreedIndex(), fetchTechnicalIndicators()])
+                .then(() => { calculateBTCI(); updateAlert(); });
+            setInterval(fetchPriceData, CONFIG.PRICE_UPDATE_INTERVAL);
+            setInterval(fetchBlockchainStats, CONFIG.STATS_UPDATE_INTERVAL);
+            setInterval(() => { Promise.allSettled([fetchFearGreedIndex(), fetchTechnicalIndicators()]).then(() => { calculateBTCI(); updateAlert(); }); }, CONFIG.FULL_UPDATE_INTERVAL);
+        });
+
+        async function fetchWithTimeout(url) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+            try {
+                const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+                clearTimeout(id);
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response;
+            } catch (e) { clearTimeout(id); throw e; }
+        }
+
+        function loadAllFromCache() {
+            ['price','blockchain','feargreed','indicators'].forEach(key => {
+                try { const item = JSON.parse(localStorage.getItem('btc_dashboard_' + key)); if (item && Date.now() - item.timestamp < CONFIG.CACHE_DURATION) cache[key] = item; } catch (e) {}
+            });
+            if (cache.price && cache.price.data && typeof cache.price.data.ath_change === 'number') { metrics.athDrop = cache.price.data.ath_change; ready.price = true; }
+            if (cache.feargreed && cache.feargreed.data) { metrics.fearGreed = cache.feargreed.data.value; ready.feargreed = true; }
+            if (cache.indicators && cache.indicators.data) { const d = cache.indicators.data; if (typeof d.mayerMultiple === 'number') metrics.mayerMultiple = d.mayerMultiple; if (typeof d.ma200wDeviation === 'number') metrics.ma200wDeviation = d.ma200wDeviation; ready.indicators = true; }
+            if (cache.blockchain && cache.blockchain.data) { const bc = cache.blockchain.data; if (typeof bc.hashrate === 'number') metrics.hashrateDrop = (bc.hashrate - CONFIG.PEAK_HASHRATE) / CONFIG.PEAK_HASHRATE * 100; if (typeof bc.difficulty === 'number') metrics.difficultyChange = (bc.difficulty - CONFIG.PEAK_DIFFICULTY) / CONFIG.PEAK_DIFFICULTY * 100; ready.blockchain = true; }
+        }
+
+        function saveToCache(key, data) { cache[key] = { data: data, timestamp: Date.now() }; try { localStorage.setItem('btc_dashboard_' + key, JSON.stringify(cache[key])); } catch (e) {} }
+
+        // 有缓存时立即把数值渲染到页面，避免等 API 期间长时间空白
+        function renderFromCache() {
+            const p = cache.price && cache.price.data;
+            if (p) {
+                if (typeof p.current_price === 'number') document.getElementById('btc-price').textContent = p.current_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                if (typeof p.price_change_24h === 'number') document.getElementById('price-change').innerHTML = `<span class="${p.price_change_24h >= 0 ? 'text-success' : 'text-danger'}">${p.price_change_24h >= 0 ? '+' : ''}${p.price_change_24h.toFixed(2)}%</span>`;
+                if (typeof p.cny_price === 'number') document.getElementById('cny-price').textContent = `¥${p.cny_price.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                if (typeof p.high_24h === 'number') document.getElementById('high-24h').textContent = `$${p.high_24h.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+                if (typeof p.low_24h === 'number') document.getElementById('low-24h').textContent = `$${p.low_24h.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+                if (typeof p.ath_change === 'number') { document.getElementById('ath-drop').innerHTML = `<span class="${p.ath_change < 0 ? 'text-danger' : 'text-success'}">${p.ath_change.toFixed(1)}%</span>`; setReach('ath-reach', p.ath_change <= THRESHOLDS.ATH_DROP); }
+                if (typeof p.ath === 'number') { const e = document.getElementById('ath-ref-value'); if (e) e.textContent = `$${p.ath.toLocaleString('en-US', { maximumFractionDigits: 0 })}`; }
+            }
+            const bc = cache.blockchain && cache.blockchain.data;
+            if (bc) {
+                if (typeof bc.hashrate === 'number') {
+                    const hd = (bc.hashrate - CONFIG.PEAK_HASHRATE) / CONFIG.PEAK_HASHRATE * 100;
+                    document.getElementById('hashrate-drop').innerHTML = `<span class="${hd < 0 ? 'text-danger' : 'text-success'}">${hd.toFixed(1)}%</span>`;
+                    document.getElementById('hashrate-status').innerHTML = `现值 ${bc.hashrate.toFixed(1)} EH/s`;
+                    setReach('hashrate-reach', hd <= THRESHOLDS.HASHRATE_DROP);
+                }
+                if (typeof bc.difficulty === 'number') {
+                    const dc = (bc.difficulty - CONFIG.PEAK_DIFFICULTY) / CONFIG.PEAK_DIFFICULTY * 100;
+                    document.getElementById('difficulty-change').innerHTML = `<span class="${dc < 0 ? 'text-success' : 'text-danger'}">${dc.toFixed(1)}%</span>`;
+                    document.getElementById('difficulty-status').innerHTML = `现值 ${bc.difficulty.toFixed(1)} T`;
+                    setReach('difficulty-reach', dc <= THRESHOLDS.DIFFICULTY_DROP);
+                }
+            }
+            if (ready.feargreed) { document.getElementById('fear-greed').textContent = metrics.fearGreed; }
+        }
+
+        function initPriceChart() {
+            if (typeof Chart === 'undefined') return;
+            const ctx = document.getElementById('price-chart').getContext('2d');
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'BTC价格', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.4, pointRadius: 0, borderWidth: 3 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8', borderColor: '#334155', borderWidth: 1 } }, scales: { x: { display: false }, y: { display: false } }, interaction: { mode: 'nearest', axis: 'x', intersect: false }, animation: { duration: 0 } }
+            });
+            if (cache.price && cache.price.data && cache.price.data.kline) { priceChart.data.labels = cache.price.data.kline.labels; priceChart.data.datasets[0].data = cache.price.data.kline.values; priceChart.update(); }
+        }
+
+        async function fetchPriceData() {
+            try {
+                // 优化：USD 行情与 CNY 价格并行请求
+                const [rUsd, rCny] = await Promise.allSettled([
+                    fetchWithTimeout('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin&price_change_percentage=24h'),
+                    fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=cny')
+                ]);
+                if (rUsd.status !== 'fulfilled') throw new Error('价格数据获取失败');
+                const arr = await rUsd.value.json();
+                const usdData = arr && arr[0];
+                if (!usdData) throw new Error('价格数据为空');
+                let cnyPrice = null;
+                if (rCny.status === 'fulfilled') { try { const j = await rCny.value.json(); cnyPrice = j && j.bitcoin ? j.bitcoin.cny : null; } catch (e) {} }
+                const currentPrice = usdData.current_price, change24h = usdData.price_change_percentage_24h, high24h = usdData.high_24h, low24h = usdData.low_24h;
+                // 直接使用 API 返回的真实历史最高点(ATH)，避免写死常量过时导致回撤被严重低估
+                const ath = (typeof usdData.ath === 'number' && usdData.ath > 0) ? usdData.ath : CONFIG.ATH;
+                const athChangePct = (typeof usdData.ath_change_percentage === 'number') ? usdData.ath_change_percentage : null;
+                const priceElement = document.getElementById('btc-price');
+                const oldPrice = parseFloat(priceElement.textContent.replace(/,/g, ''));
+                if (isNaN(oldPrice) || Math.abs(currentPrice - oldPrice) > 0.01) {
+                    priceElement.textContent = currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    priceElement.classList.remove('price-pulse'); void priceElement.offsetWidth; priceElement.classList.add('price-pulse');
+                }
+                if (typeof change24h === 'number') document.getElementById('price-change').innerHTML = `<span class="${change24h >= 0 ? 'text-success' : 'text-danger'}">${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%</span>`;
+                if (typeof cnyPrice === 'number') document.getElementById('cny-price').textContent = `¥${cnyPrice.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                if (typeof high24h === 'number') document.getElementById('high-24h').textContent = `$${high24h.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+                if (typeof low24h === 'number') document.getElementById('low-24h').textContent = `$${low24h.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+                const athDrop = (athChangePct !== null) ? athChangePct : ((currentPrice - ath) / ath * 100);
+                document.getElementById('ath-drop').innerHTML = `<span class="${athDrop < 0 ? 'text-danger' : 'text-success'}">${athDrop.toFixed(1)}%</span>`;
+                setReach('ath-reach', athDrop <= THRESHOLDS.ATH_DROP);
+                metrics.athDrop = athDrop;
+                ready.price = true;
+                // 动态补全参考文案，显示真实历史高点
+                const athRefEl = document.getElementById('ath-ref-value');
+                if (athRefEl) athRefEl.textContent = `$${ath.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+                const prevKline = cache.price && cache.price.data ? cache.price.data.kline : undefined;
+                saveToCache('price', { current_price: currentPrice, cny_price: cnyPrice, price_change_24h: change24h, high_24h: high24h, low_24h: low24h, ath: ath, ath_change: athDrop, kline: prevKline });
+                fetchWithTimeout('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1&interval=hourly').then(async res => {
+                    const data = await res.json();
+                    if (!data || !Array.isArray(data.prices)) return;
+                    const prices = data.prices.slice(-24);
+                    const labels = prices.map(p => `${new Date(p[0]).getHours()}:00`);
+                    const values = prices.map(p => p[1]);
+                    if (priceChart) { priceChart.data.labels = labels; priceChart.data.datasets[0].data = values; priceChart.update(); }
+                    const merged = Object.assign({}, cache.price.data, { kline: { labels, values } });
+                    saveToCache('price', merged);
+                }).catch(() => {});
+                updateLastUpdateTime();
+                calculateBTCI(); updateAlert();
+            } catch (e) { console.error('获取价格数据失败:', e); }
+        }
+
+        function renderBlockchain(bd) {
+            const hashrateDrop = ((bd.hashrate - CONFIG.PEAK_HASHRATE) / CONFIG.PEAK_HASHRATE * 100);
+            document.getElementById('hashrate-drop').innerHTML = `<span class="${hashrateDrop < 0 ? 'text-danger' : 'text-success'}">${hashrateDrop.toFixed(1)}%</span>`;
+            document.getElementById('hashrate-status').innerHTML = `现值 ${bd.hashrate.toFixed(1)} EH/s`;
+            document.getElementById('hashrate-status').className = `stat-sub ${hashrateDrop <= THRESHOLDS.HASHRATE_DROP ? 'text-success' : 'text-3'}`;
+            setReach('hashrate-reach', hashrateDrop <= THRESHOLDS.HASHRATE_DROP);
+            const difficultyChange = ((bd.difficulty - CONFIG.PEAK_DIFFICULTY) / CONFIG.PEAK_DIFFICULTY * 100);
+            document.getElementById('difficulty-change').innerHTML = `<span class="${difficultyChange < 0 ? 'text-success' : 'text-danger'}">${difficultyChange.toFixed(1)}%</span>`;
+            document.getElementById('difficulty-status').innerHTML = `现值 ${bd.difficulty.toFixed(1)} T`;
+            document.getElementById('difficulty-status').className = `stat-sub ${difficultyChange <= THRESHOLDS.DIFFICULTY_DROP ? 'text-success' : 'text-3'}`;
+            setReach('difficulty-reach', difficultyChange <= THRESHOLDS.DIFFICULTY_DROP);
+            metrics.hashrateDrop = hashrateDrop; metrics.difficultyChange = difficultyChange;
+            ready.blockchain = true;
+        }
+
+        async function fetchBlockchainStats() {
+            // 主源 blockchain.info；失败时用 mempool.space 轻量接口兜底
+            try {
+                const response = await fetchWithTimeout('https://api.blockchain.info/stats');
+                const data = await response.json();
+                const bd = { hashrate: data.hash_rate / 1e18, difficulty: data.difficulty / 1e12 };
+                renderBlockchain(bd);
+                saveToCache('blockchain', bd);
+                calculateBTCI(); updateAlert();
+                return;
+            } catch (e) { /* 回退 */ }
+            try {
+                // mempool.space：hashrate 单位 H/s，difficulty 原始值
+                const [rh, rd] = await Promise.all([
+                    fetchWithTimeout('https://mempool.space/api/v1/mining/hashrate/3d'),
+                    fetchWithTimeout('https://mempool.space/api/v1/difficulty-adjustment')
+                ]);
+                const hj = await rh.json();
+                const dj = await rd.json();
+                const bd = {
+                    hashrate: (hj.currentHashrate || 0) / 1e18,
+                    difficulty: (hj.currentDifficulty || (dj && dj.difficulty) || 0) / 1e12
+                };
+                if (bd.hashrate > 0 && bd.difficulty > 0) {
+                    renderBlockchain(bd);
+                    saveToCache('blockchain', bd);
+                    calculateBTCI(); updateAlert();
+                } else { throw new Error('数据无效'); }
+            } catch (e) {
+                if (!ready.blockchain) {
+                    document.getElementById('hashrate-status').innerHTML = '暂不可用';
+                    document.getElementById('difficulty-status').innerHTML = '暂不可用';
+                }
+                console.error('获取区块链数据失败:', e);
+            }
+        }
+
+        async function fetchFearGreedIndex() {
+            try {
+                const response = await fetchWithTimeout('https://api.alternative.me/fng/');
+                const data = await response.json();
+                const value = parseInt(data.data[0].value);
+                document.getElementById('fear-greed').textContent = value;
+                document.getElementById('fear-greed').className = `stat-value ${value < 25 ? 'text-danger' : value < 50 ? 'text-warning' : 'text-success'}`;
+                setReach('feargreed-reach', value <= THRESHOLDS.FEAR_GREED);
+                metrics.fearGreed = value;
+                ready.feargreed = true;
+                saveToCache('feargreed', { value });
+                calculateBTCI(); updateAlert();
+            } catch (e) { console.error('获取恐慌与贪婪指数失败:', e); }
+        }
+
+        async function fetchTechnicalIndicators() {
+            try {
+                // 只请求 365 天（数据量小、快），立即渲染 Mayer/200日线/价格分位
+                const r365 = await fetchWithTimeout('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=daily');
+                const data = await r365.json();
+                if (!data || !Array.isArray(data.prices) || data.prices.length === 0) throw new Error('技术指标数据为空');
+                const closePrices = data.prices.map(item => item[1]);
+                const currentPrice = closePrices[closePrices.length - 1];
+                const w200 = closePrices.slice(-200);
+                const ma200 = w200.reduce((a, b) => a + b, 0) / w200.length;
+                const mayerMultiple = currentPrice / ma200;
+                const ma200Deviation = ((currentPrice - ma200) / ma200 * 100);
+
+                document.getElementById('ma200').textContent = `$${ma200.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+                document.getElementById('ma200-status').textContent = `现价偏离 ${ma200Deviation.toFixed(1)}%`;
+                document.getElementById('ma200-status').className = `stat-sub ${ma200Deviation <= THRESHOLDS.MA200_DEV ? 'text-success' : 'text-3'}`;
+                setReach('ma200-reach', ma200Deviation <= THRESHOLDS.MA200_DEV);
+
+                document.getElementById('mayer-multiple').textContent = mayerMultiple.toFixed(2);
+                document.getElementById('mayer-multiple').className = `stat-value ${mayerMultiple < 0.8 ? 'text-success' : mayerMultiple < 1.2 ? 'text-warning' : 'text-danger'}`;
+                setReach('mayer-reach', mayerMultiple < THRESHOLDS.MAYER);
+
+                metrics.mayerMultiple = mayerMultiple;
+                ready.indicators = true;
+                saveToCache('indicators', { ma200, ma200Deviation, mayerMultiple, ma200wDeviation: metrics.ma200wDeviation });
+                calculateBTCI(); updateAlert();
+
+                // 200周线数据量大、较慢，放后台异步补充，不阻塞主流程
+                fetchTwoHundredWeekMA(currentPrice);
+            } catch (e) { console.error('获取技术指标失败:', e); }
+        }
+
+        // 200周均线（后台异步，慢请求不拖累其它指标）
+        async function fetchTwoHundredWeekMA(currentPrice) {
+            try {
+                // 用 weekly 粒度，数据量远小于 daily，速度快很多
+                const r = await fetchWithTimeout('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=max&interval=weekly');
+                const wd = await r.json();
+                if (!wd || !Array.isArray(wd.prices) || wd.prices.length === 0) return;
+                const weeks = wd.prices.map(p => p[1]).slice(-200);
+                const ma200w = weeks.reduce((a, b) => a + b, 0) / weeks.length;
+                const ma200wDeviation = ((currentPrice - ma200w) / ma200w * 100);
+
+                document.getElementById('ma200w-deviation').innerHTML = `<span class="${ma200wDeviation < 0 ? 'text-warning' : 'text-success'}">${ma200wDeviation.toFixed(1)}%</span>`;
+                document.getElementById('ma200w-status').textContent = ma200wDeviation < -10 ? '严重低估' : ma200wDeviation < 0 ? '低估' : '正常';
+                document.getElementById('ma200w-status').className = `stat-sub ${ma200wDeviation < 0 ? 'text-success' : 'text-3'}`;
+                setReach('ma200w-reach', ma200wDeviation < THRESHOLDS.MA200W_DEV);
+
+                metrics.ma200wDeviation = ma200wDeviation;
+                if (cache.indicators && cache.indicators.data) { cache.indicators.data.ma200wDeviation = ma200wDeviation; saveToCache('indicators', cache.indicators.data); }
+                calculateBTCI(); updateAlert();
+            } catch (e) { console.error('获取200周均线失败:', e); }
+        }
+
+        // 将某个数值按「中性点 → 达标点」线性映射为 0~100 的底部得分（方向正确、满分点=达标阈值）
+        function scoreLinear(value, neutral, target) {
+            // target 是"越底部"的方向；value 越接近/超过 target 得分越高
+            const t = (value - neutral) / (target - neutral);
+            return Math.max(0, Math.min(100, t * 100));
+        }
+
+        function calculateBTCI() {
+            // 核心数据未全部就绪时，不计算 BTCI，保持中性占位，避免误导
+            if (!(ready.price && ready.feargreed && ready.indicators && ready.blockchain)) return;
+
+            // 各分项 0~100 得分：满分点严格对齐"底部达标阈值"，且只朝底部方向计分
+            // 恐慌贪婪：中性50 → 达标25（再低封顶100，例如极度恐慌10也满分）
+            const fearGreedScore = scoreLinear(metrics.fearGreed, 50, THRESHOLDS.FEAR_GREED);
+            // Mayer：中性1.0 → 达标0.8
+            const mayerScore = scoreLinear(metrics.mayerMultiple, 1.0, THRESHOLDS.MAYER);
+            // 距ATH回撤：中性-30% → 达标-75%
+            const athScore = scoreLinear(metrics.athDrop, -30, THRESHOLDS.ATH_DROP);
+            // 算力较峰值跌幅：中性0% → 达标-15%（上涨时得0分，方向正确）
+            const hashrateScore = scoreLinear(metrics.hashrateDrop, 0, THRESHOLDS.HASHRATE_DROP);
+            // 难度调整：中性0% → 达标-8%
+            const difficultyScore = scoreLinear(metrics.difficultyChange, 0, THRESHOLDS.DIFFICULTY_DROP);
+            // 200周线偏离：中性+20% → 达标-20%（跌破即强底部信号）
+            const ma200wScore = scoreLinear(metrics.ma200wDeviation, 20, -20);
+
+            // 权重合计=1，均为真实可得指标，无重复计权
+            const btci = Math.round(
+                fearGreedScore * 0.20 +
+                mayerScore     * 0.25 +
+                athScore       * 0.15 +
+                hashrateScore  * 0.12 +
+                difficultyScore* 0.08 +
+                ma200wScore    * 0.20
+            );
+            const scoreEl = document.getElementById('btci-score');
+            scoreEl.textContent = btci;
+            scoreEl.className = '';
+            document.getElementById('progress-circle').style.strokeDashoffset = 282.74 * (1 - btci / 100);
+            let stage, stageColor;
+            if (btci < 20) { stage = '非底部区域'; stageColor = '#ef4444'; }
+            else if (btci < 40) { stage = '下跌探底阶段'; stageColor = '#f59e0b'; }
+            else if (btci < 60) { stage = '黄金坑区间'; stageColor = '#f59e0b'; }
+            else if (btci < 80) { stage = '底部末期'; stageColor = '#10b981'; }
+            else { stage = '深度底部区域'; stageColor = '#10b981'; }
+            document.getElementById('current-stage').textContent = stage;
+            document.getElementById('current-stage').style.color = stageColor;
+            document.getElementById('stage-bar').style.width = `${btci}%`;
+            document.getElementById('stage-bar').style.backgroundColor = stageColor;
+            document.getElementById('progress-circle').style.stroke = stageColor;
+        }
+
+        function updateAlert() {
+            // 数据未就绪时不输出预警结论，避免误导
+            if (!(ready.price && ready.feargreed && ready.indicators && ready.blockchain)) return;
+            const btci = parseInt(document.getElementById('btci-score').textContent);
+            const hashrateDrop = metrics.hashrateDrop, difficultyChange = metrics.difficultyChange;
+            const alertBox = document.getElementById('alert-box');
+            function render(bg, border, color, title, body, icon) {
+                alertBox.className = 'alert'; alertBox.style.background = bg; alertBox.style.border = `1px solid ${border}`;
+                alertBox.innerHTML = `<div class="row"><svg style="color:${color}" fill="currentColor" viewBox="0 0 20 20">${icon}</svg><div><h3 style="color:${color}">${title}</h3><p>${body}</p></div></div>`;
+            }
+            const warnIcon = '<path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>';
+            const infoIcon = '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 13a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"/>';
+            if (btci > 50 && hashrateDrop <= THRESHOLDS.HASHRATE_DROP && difficultyChange <= THRESHOLDS.DIFFICULTY_DROP) render('rgba(239,68,68,.1)', 'rgba(239,68,68,.3)', '#ef4444', '红色预警：强烈买入时机', '当前底部指数超过50分，算力跌幅超过15%、难度调整超过8%，多项底部信号触发，建议加大仓位。', warnIcon);
+            else if (btci > 40 && (hashrateDrop <= THRESHOLDS.HASHRATE_DROP || difficultyChange <= THRESHOLDS.DIFFICULTY_DROP)) render('rgba(245,158,11,.1)', 'rgba(245,158,11,.3)', '#f59e0b', '橙色预警：分批买入时机', `当前底部指数${btci}分，处于黄金坑区间。${hashrateDrop <= THRESHOLDS.HASHRATE_DROP ? '算力跌幅已达底部阈值' : '难度调整已达底部阈值'}，建议开始分批建仓。`, warnIcon);
+            else if (btci > 20) render('rgba(51,65,85,.5)', '#334155', '#94a3b8', '黄色预警：观望阶段', '当前处于底部初期，死亡螺旋可能尚未结束，建议保持观望，等待更多底部信号出现。', infoIcon);
+            else render('rgba(59,130,246,.1)', 'rgba(59,130,246,.3)', '#3b82f6', '蓝色预警：风险较高', '当前底部指数低于20分，市场尚未进入底部区域，建议远离市场，等待更好的时机。', infoIcon);
+        }
+
+        function updateLastUpdateTime() {
+            const now = new Date();
+            document.getElementById('last-update').textContent = `最后更新: ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+        }
+    </script>
+</body>
+</html>
